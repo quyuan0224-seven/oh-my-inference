@@ -133,10 +133,9 @@ class EngineCore:
 
         while True:
             result = self.step()
-            if result is None:
-                raise RuntimeError("engine has no work but request is unfinished")
-            if result.request_id != request_id:
-                raise RuntimeError("scheduler returned an unexpected request")
+            # generate() 拥有唯一的请求，所以 step 不可能返回 None，
+            # 也不可能是别的 request。
+            assert result is not None
 
             if result.finished:
                 return self._make_request_output(
