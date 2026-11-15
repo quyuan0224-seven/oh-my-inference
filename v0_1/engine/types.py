@@ -104,6 +104,7 @@ class StepResult:
     token_id: int
     token_char: str
     output_text: str
+    output_token_ids: list[int]
     num_computed_tokens: int
     finished: bool
     finish_reason: str | None

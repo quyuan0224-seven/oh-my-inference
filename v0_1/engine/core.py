@@ -89,25 +89,27 @@ class EngineCore:
         )
 
         request = scheduler_step.request
-        output_text = self.tokenizer.decode(request.output_token_ids)
+        output_token_ids = list(request.output_token_ids)
+        output_text = self.tokenizer.decode(output_token_ids)
         result = StepResult(
             request_id=request.request_id,
             phase=scheduler_step.phase,
             token_id=scheduler_step.token_id,
             token_char=self.tokenizer.decode([scheduler_step.token_id]),
             output_text=output_text,
+            output_token_ids=output_token_ids,
             num_computed_tokens=request.num_computed_tokens,
             finished=scheduler_step.finished,
             finish_reason=scheduler_step.finish_reason,
         )
 
         if scheduler_step.finished:
-            self._finished[request.request_id] = RequestOutput(
+            self._finished[request.request_id] = self._make_request_output(
                 request_id=request.request_id,
                 prompt=request.prompt,
                 output_text=output_text,
-                output_token_ids=list(request.output_token_ids),
-                finish_reason=request.finish_reason,
+                output_token_ids=output_token_ids,
+                finish_reason=scheduler_step.finish_reason,
             )
 
         return result
@@ -120,15 +122,42 @@ class EngineCore:
         prompt: str,
         sampling_params: SamplingParams | None = None,
     ) -> RequestOutput:
-        """同步生成一个请求；内部仍然是 schedule -> execute -> update 的 step loop。"""
+        """同步生成一个请求；由 step() 的返回值判断何时完成。"""
         request_id = self.add_request(prompt, sampling_params)
 
-        while request_id not in self._finished:
+        while True:
             result = self.step()
             if result is None:
                 raise RuntimeError("engine has no work but request is unfinished")
 
-        return self._finished[request_id]
+            # 这个 step 可能是在处理排在当前请求前面的其他请求。
+            if result.request_id != request_id:
+                continue
+
+            if result.finished:
+                return self._make_request_output(
+                    request_id=request_id,
+                    prompt=prompt,
+                    output_text=result.output_text,
+                    output_token_ids=result.output_token_ids,
+                    finish_reason=result.finish_reason,
+                )
+
+    @staticmethod
+    def _make_request_output(
+        request_id: str,
+        prompt: str,
+        output_text: str,
+        output_token_ids: list[int],
+        finish_reason: str | None,
+    ) -> RequestOutput:
+        return RequestOutput(
+            request_id=request_id,
+            prompt=prompt,
+            output_text=output_text,
+            output_token_ids=list(output_token_ids),
+            finish_reason=finish_reason,
+        )
 
     def run_until_idle(self) -> list[RequestOutput]:
         """把所有已提交请求跑完，返回按完成顺序排列的结果。"""
