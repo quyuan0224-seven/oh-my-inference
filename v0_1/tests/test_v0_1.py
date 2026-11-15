@@ -60,21 +60,15 @@ class TestEngineCore(unittest.TestCase):
         self.assertEqual(out_a.finish_reason, "length")
         self.assertEqual(engine_a.kv_cache_manager.active_requests, 0)
 
-    def test_generate_returns_own_result_when_another_request_is_ahead(self) -> None:
+    def test_generate_requires_an_idle_engine(self) -> None:
         tokenizer = CharTokenizer()
         engine = EngineCore(tokenizer=tokenizer, model=make_model(), seed=0)
         params = SamplingParams(max_tokens=2, temperature=0.0, stop_chars="")
 
-        first_id = engine.add_request("the quick brown", params)
-        output = engine.generate("hello", params)
+        engine.add_request("the quick brown", params)
 
-        self.assertEqual(output.request_id, "req-001")
-        self.assertEqual(output.prompt, "hello")
-        self.assertEqual(len(output.output_token_ids), 2)
-        self.assertEqual(
-            [item.request_id for item in engine.finished_outputs],
-            [first_id, "req-001"],
-        )
+        with self.assertRaises(RuntimeError):
+            engine.generate("hello", params)
 
     def test_scheduler_runs_queued_requests_serially(self) -> None:
         tokenizer = CharTokenizer()

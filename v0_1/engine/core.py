@@ -122,17 +122,21 @@ class EngineCore:
         prompt: str,
         sampling_params: SamplingParams | None = None,
     ) -> RequestOutput:
-        """同步生成一个请求；由 step() 的返回值判断何时完成。"""
+        """同步生成一个请求；要求 engine 空闲，由 step() 的返回值判断完成。"""
+        if self.has_requests():
+            raise RuntimeError(
+                "generate() requires an idle engine; "
+                "use add_request() + run_until_idle() for queued requests"
+            )
+
         request_id = self.add_request(prompt, sampling_params)
 
         while True:
             result = self.step()
             if result is None:
                 raise RuntimeError("engine has no work but request is unfinished")
-
-            # 这个 step 可能是在处理排在当前请求前面的其他请求。
             if result.request_id != request_id:
-                continue
+                raise RuntimeError("scheduler returned an unexpected request")
 
             if result.finished:
                 return self._make_request_output(
