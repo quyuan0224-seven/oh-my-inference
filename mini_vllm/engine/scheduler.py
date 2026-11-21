@@ -1,6 +1,6 @@
-"""V0.1 的极简 Scheduler。
+"""mini_vllm 的极简 Scheduler。
 
-V0.1 的调度策略：
+mini_vllm 的调度策略：
 - FCFS：waiting 队列头部先来先服务；
 - 同一时刻只有一个 running 请求；
 - 先做一次 prefill，把 prompt 的 K/V 写满 cache；

@@ -1,6 +1,6 @@
 """EngineCore：把 Scheduler / KVCacheManager / ModelRunner 串成 step loop。
 
-这是 V0.1 的“引擎核心”，对应 vLLM 的 EngineCore：
+这是 mini_vllm 的“引擎核心”，对应 vLLM 的 EngineCore：
 - 接收请求；
 - 每一步调用 scheduler.schedule()；
 - 把 SchedulerOutput 交给 model runner；

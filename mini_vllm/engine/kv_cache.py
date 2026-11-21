@@ -1,6 +1,6 @@
 """KV cache 生命周期管理。
 
-V0.1 的简化：
+mini_vllm 的简化：
 - 一个请求一段连续的 K/V 列表；
 - 只有一层、一个 attention head；
 - 没有 paged block、block table、prefix sharing。

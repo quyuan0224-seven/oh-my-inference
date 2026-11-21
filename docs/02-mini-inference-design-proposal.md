@@ -1,6 +1,6 @@
 # 最小 Custom Inference 设计方案（讨论稿）
 
-> 状态：**V1 设计讨论稿**。V0.1 已按“模块齐全、实现极简”的方式实现，见 [V0.1 设计与实现](03-v0.1-design-and-implementation.md)（代码在 [`v0_1/`](../v0_1/)）。  
+> 状态：**V1 设计讨论稿**。mini_vllm 已按“模块齐全、实现极简”的方式实现，见 [mini_vllm 设计与实现](03-mini-vllm-design-and-implementation.md)（代码在 [`mini_vllm/`](../mini_vllm/)）。  
 > 目标：用尽可能小的代码量，把 vLLM V1 的核心执行流表达清楚；不是做一个能跑真实模型的推理框架。  
 > 前置阅读：[vLLM 架构与核心模块调研](01-vllm-architecture-research.md)
 
@@ -1019,7 +1019,7 @@ assert 两者 token 序列完全一致
 
 ## 10. 里程碑与验收
 
-### M0：调研 + 设计 + V0.1（当前）
+### M0：调研 + 设计 + mini_vllm 初版（已完成）
 
 交付：
 
@@ -1110,45 +1110,41 @@ assert 两者 token 序列完全一致
 
 ---
 
-## 11. 计划中的目录结构
+## 11. 目录结构
 
-V1 沿用 V0.1 的“按功能层分目录”规范：
+V1 沿用 mini_vllm 的“按功能层分目录”规范：
 
 ```text
 oh_my_inference/
 ├── README.md
 ├── docs/
+│   ├── 00-status.md
 │   ├── 01-vllm-architecture-research.md
-│   └── 02-mini-inference-design-proposal.md
-├── v0_1/                       # 已实现：单请求、连续 KV cache
-├── mini_vllm/                  # V1 计划
+│   ├── 02-mini-inference-design-proposal.md
+│   └── 03-mini-vllm-design-and-implementation.md
+├── mini_vllm/                  # 当前实现，按 M1 小步演进
 │   ├── __init__.py
+│   ├── config.py               # M1 新增
 │   ├── serving/
 │   │   └── server.py
 │   ├── engine/
 │   │   ├── core.py
 │   │   ├── scheduler.py
 │   │   ├── kv_cache.py
-│   │   ├── block_pool.py
+│   │   ├── block_pool.py       # M1 新增
 │   │   ├── model_runner.py
 │   │   ├── tokenizer.py
 │   │   └── types.py
 │   ├── model/
-│   │   ├── toy_transformer.py
-│   │   ├── paged_attention.py
+│   │   ├── attention.py
+│   │   ├── cache.py
+│   │   ├── paged_attention.py  # M1 新增
 │   │   └── sampler.py
-│   └── config.py
-├── tests/
-│   ├── test_kv_cache.py
-│   ├── test_scheduler.py
-│   ├── test_paged_attention.py
-│   └── test_engine.py
-└── examples/
-    ├── demo.py
-    └── continuous_batching.py
+│   ├── examples/
+│   └── tests/
 ```
 
-当前已经实现 `v0_1/`（单请求、连续 KV cache、无 paged block 的 V0.1）；上面的 `mini_vllm/` 是 V1 的计划结构，尚未创建。V1 实现时会沿用同样的功能层边界；不会为每个文件单独建目录。
+`mini_vllm/` 已由最初的单请求实现重命名而来；V1 直接在它上面演进，不再维护独立的 `v0_1/` 目录。`config.py`、`block_pool.py`、`paged_attention.py` 等是 M1 计划新增的模块。
 
 ---
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""V0.1 的最小 HTTP Server。
+"""mini_vllm 的最小 HTTP Server。
 
 职责边界：
     HTTP 请求 -> Server -> EngineCore.generate() -> JSON 响应
 
-V0.1 刻意做成单线程、同步、非流式：
+mini_vllm 刻意做成单线程、同步、非流式：
 - 一个请求处理完才处理下一个；
 - 不做 token streaming；
 - 不做 OpenAI 兼容协议；
@@ -88,7 +88,7 @@ class InferenceHandler(BaseHTTPRequestHandler):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="V0.1 minimal HTTP inference server")
+    parser = argparse.ArgumentParser(description="mini_vllm minimal HTTP inference server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--max-model-len", type=int, default=32)
@@ -108,7 +108,7 @@ def main() -> None:
     engine = EngineCore(tokenizer=tokenizer, model=model, seed=0)
     server = InferenceHTTPServer((args.host, args.port), engine)
 
-    print(f"V0.1 server listening on http://{args.host}:{args.port}")
+    print(f"mini_vllm server listening on http://{args.host}:{args.port}")
     print("  GET  /health")
     print("  POST /generate  {\"prompt\": \"hello\", \"max_tokens\": 8}")
     print("note: single-threaded, blocking, non-streaming; outputs are random gibberish.")

@@ -1,7 +1,7 @@
-# V0.1 设计与实现：模块齐全的最小 Inference Engine
+# mini_vllm 设计与实现：模块齐全的最小 Inference Engine
 
 > 状态：已实现  
-> 代码位置：[`v0_1/`](../v0_1/)  
+> 代码位置：[`mini_vllm/`](../mini_vllm/)  
 > 验证环境：Python 3.12.3，仅标准库，无 GPU / 第三方依赖  
 > 前置阅读：[vLLM 架构调研](01-vllm-architecture-research.md)
 
@@ -9,7 +9,7 @@
 
 ## 0. 摘要
 
-V0.1 的目标不是“做一个能跑真实模型的推理框架”，而是用尽可能小的实现，把下面这条链路完整表达出来：
+mini_vllm 的目标不是“做一个能跑真实模型的推理框架”，而是用尽可能小的实现，把下面这条链路完整表达出来：
 
 ```text
 Server
@@ -27,7 +27,7 @@ Server
 - **单层单 head toy model**：随机权重，输出是乱码，但 KV 读写路径是真实的；
 - **最小 HTTP Server**：单线程、同步、非流式。
 
-V0.1 用约 700 行核心代码（含注释与类型定义）回答一个问题：
+mini_vllm 用约 700 行核心代码（含注释与类型定义）回答一个问题：
 
 > 一个请求从进入 server 到返回文本，中间到底经过了哪些模块、每一步的状态如何变化？
 
@@ -56,7 +56,7 @@ V0.1 用约 700 行核心代码（含注释与类型定义）回答一个问题�
 - 不实现 OpenAI 兼容 API、流式输出、并发 serving；
 - 不追求性能。
 
-这些不是“遗漏”，而是 V1 的内容。V0.1 只负责建立语义骨架。
+这些不是“遗漏”，而是 V1 的内容。mini_vllm 只负责建立语义骨架。
 
 ---
 
@@ -64,13 +64,13 @@ V0.1 用约 700 行核心代码（含注释与类型定义）回答一个问题�
 
 | 版本 | 状态 | 核心能力 | 目的 |
 |---|---|---|---|
-| V0.1 | ✅ 已实现 | 单请求、连续 KV、显式 prefill/decode | 建立模块边界与执行流认知 |
+| mini_vllm | ✅ 已实现 | 单请求、连续 KV、显式 prefill/decode | 建立模块边界与执行流认知 |
 | V1 | 设计稿 | paged KV、continuous batching、prefix caching、preemption | 接近 vLLM 的核心机制 |
 
-V0.1 与 V1 的关系不是“功能多少”，而是“同一套模块边界下的不同实现深度”：
+mini_vllm 与 V1 的关系不是“功能多少”，而是“同一套模块边界下的不同实现深度”：
 
 ```text
-V0.1:  Server -> EngineCore -> Scheduler -> KVCacheManager -> ModelRunner -> Model/Sampler
+mini_vllm:  Server -> EngineCore -> Scheduler -> KVCacheManager -> ModelRunner -> Model/Sampler
 V1:    Server -> EngineCore -> Scheduler -> KVCacheManager/BlockPool -> ModelRunner -> PagedAttention
 ```
 
@@ -83,7 +83,7 @@ V1 的详细设计见 [最小 Custom Inference 设计方案](02-mini-inference-d
 代码按三个实际功能层组织：
 
 ```text
-v0_1/
+mini_vllm/
 ├── serving/
 │   └── server.py              # HTTP 入口
 ├── engine/
@@ -100,7 +100,7 @@ v0_1/
 ├── examples/
 │   └── prefill_decode_kv_cache_trace.py   # prefill/decode/KV cache 实验
 ├── tests/
-│   └── test_v0_1.py
+│   └── test_engine.py
 └── README.md                  # 快速开始
 ```
 
@@ -117,7 +117,7 @@ v0_1/
 
 ## 4. 模块职责
 
-| 模块 | 文件 | V0.1 职责 | vLLM 对应物 |
+| 模块 | 文件 | mini_vllm 职责 | vLLM 对应物 |
 |---|---|---|---|
 | Server | `serving/server.py` | 接收 HTTP `/generate`，调用 EngineCore | API Server / entrypoint |
 | EngineCore | `engine/core.py` | 串联 schedule → execute → update | `EngineCore` |
@@ -167,7 +167,7 @@ add_request
             -> FINISHED_STOPPED / FINISHED_LENGTH_CAPPED
 ```
 
-V0.1 没有 `PREEMPTED`，因为不做 KV 不足时的抢占。
+mini_vllm 没有 `PREEMPTED`，因为不做 KV 不足时的抢占。
 
 ### 5.2 Server 到 EngineCore
 
@@ -269,7 +269,7 @@ run_until_idle()
 
 ### 6.1 Scheduler：单 running + 显式两阶段
 
-V0.1 的 Scheduler 刻意保留两个显式阶段：
+mini_vllm 的 Scheduler 刻意保留两个显式阶段：
 
 ```python
 if self.running is None:
@@ -282,14 +282,14 @@ else:
 
 它和 V1 的区别：
 
-- V0.1：Scheduler 明确知道 `prefill` / `decode`；
+- mini_vllm：Scheduler 明确知道 `prefill` / `decode`；
 - V1：没有阶段，只有 `{request_id: num_new_tokens}`，prefill/decode 是同一循环的不同表现。
 
 为什么先保留两阶段：这样更容易看懂“KV cache 为什么需要”“prefill 和 decode 的输入长度为什么不同”。等这个认知建立后，再理解 V1 的统一 token budget 会容易很多。
 
 ### 6.2 KVCacheManager：只做生命周期，不做 paged 分配
 
-V0.1 的 `KVCacheManager` 非常简单：
+mini_vllm 的 `KVCacheManager` 非常简单：
 
 ```text
 allocate(request) -> KVCache
@@ -374,7 +374,7 @@ the quick brown  -> nnnnnn
 zzzz             -> zzzzzz
 ```
 
-但一旦进入 decode，随机模型没有足够能力维持有意义的上下文，输出就会趋同或重复。V0.1 验证的是 **KV cache 路径和请求状态**，不是文本质量；正确性由 `forward_full` 对照测试保证。
+但一旦进入 decode，随机模型没有足够能力维持有意义的上下文，输出就会趋同或重复。mini_vllm 验证的是 **KV cache 路径和请求状态**，不是文本质量；正确性由 `forward_full` 对照测试保证。
 
 ### 6.5 Sampler
 
@@ -411,7 +411,7 @@ POST /generate  -> {"prompt": "...", "max_tokens": 6, ...}
 | 同步 HTTP | 不需要处理并发/流式 | async + streaming |
 | 无 prefix/preemption | 先不做资源竞争和缓存复用 | 按 V1 路线逐步加 |
 
-V0.1 的核心价值不是“功能完整”，而是**模块边界正确、状态变化可见、执行流可验证**。
+mini_vllm 的核心价值不是“功能完整”，而是**模块边界正确、状态变化可见、执行流可验证**。
 
 ---
 
@@ -419,7 +419,7 @@ V0.1 的核心价值不是“功能完整”，而是**模块边界正确、状�
 
 ### 8.1 测试内容
 
-`tests/test_v0_1.py` 包含三个测试：
+`tests/test_engine.py` 包含三个测试：
 
 1. **KV cache 路径正确**
    - `prefill(prompt)` 与 `forward_full(prompt)` 的 logits 对比；
@@ -438,7 +438,7 @@ V0.1 的核心价值不是“功能完整”，而是**模块边界正确、状�
 ### 8.2 运行记录
 
 ```text
-$ python3 -m unittest v0_1.tests.test_v0_1 -v
+$ python3 -m unittest mini_vllm.tests.test_engine -v
 ...
 Ran 3 tests in 0.005s
 
@@ -474,13 +474,13 @@ POST /generate
 
 ```bash
 # 本地实验
-python3 -m v0_1.examples.prefill_decode_kv_cache_trace --max-tokens 6 --temperature 0.8
+python3 -m mini_vllm.examples.prefill_decode_kv_cache_trace --max-tokens 6 --temperature 0.8
 
 # 测试
-python3 -m unittest v0_1.tests.test_v0_1 -v
+python3 -m unittest mini_vllm.tests.test_engine -v
 
 # HTTP server
-python3 -m v0_1.serving.server --port 8000
+python3 -m mini_vllm.serving.server --port 8000
 
 # 健康检查
 curl http://127.0.0.1:8000/health
@@ -504,14 +504,14 @@ Demo 输出中的文本是随机权重产生的乱码，这是预期行为。观
 
 从**请求入口**开始读，顺着一次请求的调用链往下走：
 
-1. [HTTP 入口：do_POST()](../v0_1/serving/server.py#L51)：解析 JSON，调用 `engine.generate()`；
-2. [EngineCore.generate()](../v0_1/engine/core.py#L120)：单请求的同步入口，先 `add_request` 再循环 `step`；
-3. [EngineCore.add_request()](../v0_1/engine/core.py#L51)：tokenize、构造 `Request`、进入 Scheduler；
-4. [Scheduler.add_request()](../v0_1/engine/scheduler.py#L54)：请求进入 waiting 队列；
-5. [EngineCore.step()](../v0_1/engine/core.py#L79)：`schedule -> execute -> update`；
-6. [Scheduler.schedule()](../v0_1/engine/scheduler.py#L70)：第一次返回 prefill，之后返回 decode；
-7. [ModelRunner.execute()](../v0_1/engine/model_runner.py#L24)：调用模型和 Sampler；
-8. [TinyAttentionModel._step()](../v0_1/model/attention.py#L72)：写 K/V、读 cache、算 attention。
+1. [HTTP 入口：do_POST()](../mini_vllm/serving/server.py#L51)：解析 JSON，调用 `engine.generate()`；
+2. [EngineCore.generate()](../mini_vllm/engine/core.py#L120)：单请求的同步入口，先 `add_request` 再循环 `step`；
+3. [EngineCore.add_request()](../mini_vllm/engine/core.py#L51)：tokenize、构造 `Request`、进入 Scheduler；
+4. [Scheduler.add_request()](../mini_vllm/engine/scheduler.py#L54)：请求进入 waiting 队列；
+5. [EngineCore.step()](../mini_vllm/engine/core.py#L79)：`schedule -> execute -> update`；
+6. [Scheduler.schedule()](../mini_vllm/engine/scheduler.py#L70)：第一次返回 prefill，之后返回 decode；
+7. [ModelRunner.execute()](../mini_vllm/engine/model_runner.py#L24)：调用模型和 Sampler；
+8. [TinyAttentionModel._step()](../mini_vllm/model/attention.py#L72)：写 K/V、读 cache、算 attention。
 
 如果只想看核心循环，再重点看这四段：
 
@@ -522,9 +522,9 @@ Demo 输出中的文本是随机权重产生的乱码，这是预期行为。观
 
 辅助文件：
 
-- [`engine/kv_cache.py`](../v0_1/engine/kv_cache.py)：KV 生命周期；
-- [`model/cache.py`](../v0_1/model/cache.py)：K/V 存储；
-- [`tests/test_v0_1.py`](../v0_1/tests/test_v0_1.py)：正确性验证。
+- [`engine/kv_cache.py`](../mini_vllm/engine/kv_cache.py)：KV 生命周期；
+- [`model/cache.py`](../mini_vllm/model/cache.py)：K/V 存储；
+- [`tests/test_engine.py`](../mini_vllm/tests/test_engine.py)：正确性验证。
 
 ---
 
@@ -548,4 +548,4 @@ Demo 输出中的文本是随机权重产生的乱码，这是预期行为。观
 5. **preemption**：KV 不足时释放 + 重算；
 6. **真实模型**：替换 toy model 和 tokenizer。
 
-每一步都只改一层，保持 V0.1 的模块边界不变。V1 的详细设计见 [02-mini-inference-design-proposal.md](02-mini-inference-design-proposal.md)。
+每一步都只改一层，保持 mini_vllm 的模块边界不变。V1 的详细设计见 [02-mini-inference-design-proposal.md](02-mini-inference-design-proposal.md)。

@@ -6,7 +6,7 @@
 - 调用 Sampler 得到下一个 token；
 - 返回 ModelRunnerOutput。
 
-V0.1 没有 tensor batch、没有 attention backend 抽象、没有 CUDA graph。
+mini_vllm 没有 tensor batch、没有 attention backend 抽象、没有 CUDA graph。
 """
 
 from __future__ import annotations

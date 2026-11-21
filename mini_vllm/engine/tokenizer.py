@@ -1,6 +1,6 @@
 """字符级 tokenizer。
 
-V0.1 用一个字符一个 token 的最简实现，避免引入 BPE/SentencePiece。
+mini_vllm 用一个字符一个 token 的最简实现，避免引入 BPE/SentencePiece。
 它的职责和真实 tokenizer 一样：文本 <-> token id。
 """
 

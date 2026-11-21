@@ -1,6 +1,6 @@
-# V0.1 快速开始
+# mini_vllm 快速开始
 
-V0.1 是“模块齐全、实现极简”的 inference engine：
+mini_vllm 是“模块齐全、实现极简”的 inference engine：
 
 ```text
 Server
@@ -12,13 +12,13 @@ Server
 
 完整设计、模块职责、执行流和验证记录见：
 
-- [V0.1 设计与实现](../docs/03-v0.1-design-and-implementation.md)
+- [mini_vllm 设计与实现](../docs/03-mini-vllm-design-and-implementation.md)
 - [V1 调研与设计方案](../docs/02-mini-inference-design-proposal.md)
 
 ## 目录
 
 ```text
-v0_1/
+mini_vllm/
 ├── serving/
 │   └── server.py              # HTTP 入口
 ├── engine/
@@ -35,7 +35,7 @@ v0_1/
 ├── examples/
 │   └── prefill_decode_kv_cache_trace.py   # 本地实验脚本
 └── tests/
-    └── test_v0_1.py
+    └── test_engine.py
 ```
 
 ## 运行
@@ -44,13 +44,13 @@ v0_1/
 
 ```bash
 # 实验
-python3 -m v0_1.examples.prefill_decode_kv_cache_trace --max-tokens 6 --temperature 0.8
+python3 -m mini_vllm.examples.prefill_decode_kv_cache_trace --max-tokens 6 --temperature 0.8
 
 # 测试
-python3 -m unittest v0_1.tests.test_v0_1 -v
+python3 -m unittest mini_vllm.tests.test_engine -v
 
 # server
-python3 -m v0_1.serving.server --port 8000
+python3 -m mini_vllm.serving.server --port 8000
 ```
 
 ```bash
@@ -71,4 +71,4 @@ curl -X POST http://127.0.0.1:8000/generate \
 4. [Scheduler.schedule()](engine/scheduler.py#L70) → [ModelRunner.execute()](engine/model_runner.py#L24)
 5. [TinyAttentionModel._step()](model/attention.py#L72)
 
-更完整的解释在 [V0.1 设计文档](../docs/03-v0.1-design-and-implementation.md)。
+更完整的解释在 [mini_vllm 设计文档](../docs/03-mini-vllm-design-and-implementation.md)。

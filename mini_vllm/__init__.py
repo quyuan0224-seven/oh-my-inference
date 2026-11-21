@@ -1,4 +1,4 @@
-"""V0.1: a module-complete but deliberately simplified inference engine."""
+"""mini_vllm: a module-complete but deliberately simplified inference engine."""
 
 from .engine import (
     CharTokenizer,

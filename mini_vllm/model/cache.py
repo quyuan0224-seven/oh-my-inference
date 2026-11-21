@@ -1,6 +1,6 @@
 """一个请求的连续 KV cache 存储。
 
-V0.1 只有一层、一个 head，所以直接用一个 K/V 列表表示。
+mini_vllm 只有一层、一个 head，所以直接用一个 K/V 列表表示。
 它属于 model 侧的数据结构；Engine 侧的 KVCacheManager 负责生命周期，
 这样 model 不需要反向依赖 engine。
 """

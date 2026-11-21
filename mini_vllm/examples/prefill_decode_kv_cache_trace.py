@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V0.1 实验：观察 Scheduler 的 prefill/decode 步进和 KV cache。"""
+"""mini_vllm 实验：观察 Scheduler 的 prefill/decode 步进和 KV cache。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ..model import TinyAttentionModel
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="V0.1 prefill/decode/KV-cache trace experiment")
+    parser = argparse.ArgumentParser(description="mini_vllm prefill/decode/KV-cache trace experiment")
     parser.add_argument(
         "--prompt",
         action="append",
@@ -44,7 +44,7 @@ def main() -> None:
         engine.add_request(prompt, params)
 
     print("architecture: Server -> EngineCore -> [Scheduler, KVCacheManager, ModelRunner]")
-    print("this experiment: EngineCore directly (HTTP Server is exercised by v0_1/serving/server.py)")
+    print("this experiment: EngineCore directly (HTTP Server is exercised by mini_vllm/serving/server.py)")
     print(f"queued: {len(prompts)} requests")
     print()
     print(

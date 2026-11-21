@@ -1,4 +1,4 @@
-"""V0.1 的 toy model：单层、单 head 的 attention 语言模型。
+"""mini_vllm 的 toy model：单层、单 head 的 attention 语言模型。
 
 它不是完整 Transformer（没有多层、没有 MLP、没有 LayerNorm），
 但保留了最关键的 inference 结构：

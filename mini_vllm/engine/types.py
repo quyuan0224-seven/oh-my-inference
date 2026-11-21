@@ -1,4 +1,4 @@
-"""V0.1 的共享数据类型。
+"""mini_vllm 的共享数据类型。
 
 这些 dataclass 是模块之间的契约，尽量保持小而明确：
 
@@ -31,7 +31,7 @@ class RequestStatus(Enum):
 
 @dataclass(frozen=True)
 class SamplingParams:
-    """V0.1 只支持最基本的采样参数。"""
+    """mini_vllm 只支持最基本的采样参数。"""
 
     max_tokens: int = 20
     temperature: float = 0.0

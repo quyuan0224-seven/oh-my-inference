@@ -1,4 +1,4 @@
-"""V0.1 的最小回归测试。
+"""mini_vllm 的最小回归测试。
 
 重点不是覆盖率，而是验证三件事：
 1. prefill + decode 的 KV cache 结果与 full forward 一致；

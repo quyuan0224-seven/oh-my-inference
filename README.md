@@ -1,15 +1,15 @@
 # 从 vLLM 到最小 Inference Engine
 
 > 调研基准：2026-11，vLLM 0.33.x / V1 主线。
-> 当前进度：**V0.1 已实现**；V1（paged KV、continuous batching、prefix caching 等）仍是设计稿。
+> 当前进度：**mini_vllm 当前基线已实现**；V1（paged KV、continuous batching、prefix caching 等）开发中。
 
 ## 先看什么
 
-### 1. V0.1：模块齐全、实现极简
+### 1. mini_vllm：模块齐全、实现极简
 
-[V0.1 快速开始](v0_1/README.md) · [V0.1 设计与实现](docs/03-v0.1-design-and-implementation.md)
+[mini_vllm 快速开始](mini_vllm/README.md) · [mini_vllm 设计与实现](docs/03-mini-vllm-design-and-implementation.md)
 
-V0.1 保留了所有核心高层模块，只是把内部实现压缩到最小：
+mini_vllm 保留了所有核心高层模块，只是把内部实现压缩到最小：
 
 ```text
 Server
@@ -22,7 +22,7 @@ Server
 代码按功能模块分目录：
 
 ```text
-v0_1/
+mini_vllm/
 ├── serving/        # HTTP server
 ├── engine/         # EngineCore / Scheduler / KVCacheManager / ModelRunner / types
 ├── model/          # toy model / KV storage / sampler
@@ -43,12 +43,12 @@ v0_1/
 快速运行（当前环境只有 `python3`，没有 `python` 别名）：
 
 ```bash
-python3 -m v0_1.examples.prefill_decode_kv_cache_trace --max-tokens 6 --temperature 0.8
-python3 -m unittest v0_1.tests.test_v0_1 -v
-python3 -m v0_1.serving.server --port 8000
+python3 -m mini_vllm.examples.prefill_decode_kv_cache_trace --max-tokens 6 --temperature 0.8
+python3 -m unittest mini_vllm.tests.test_engine -v
+python3 -m mini_vllm.serving.server --port 8000
 ```
 
-V0.1 刻意不做的：continuous batching、paged KV cache、prefix caching、preemption、真实模型、TP/DP、流式输出。这些是 V1 的内容，不是 V0.1 的遗漏。
+mini_vllm 刻意不做的：continuous batching、paged KV cache、prefix caching、preemption、真实模型、TP/DP、流式输出。这些是 V1 的内容，不是 mini_vllm 的遗漏。
 
 ### 2. vLLM 调研与 V1 设计（后续蓝图）
 
@@ -76,7 +76,7 @@ V0.1 刻意不做的：continuous batching、paged KV cache、prefix caching、p
 
 | 版本 | 已实现 | 目的 |
 |---|---|---|
-| V0.1 | ✅ | 建立 server → engine core → scheduler / kv cache / model runner 的最基础认知 |
+| mini_vllm | ✅ | 建立 server → engine core → scheduler / kv cache / model runner 的最基础认知 |
 | V1 | 设计稿 | 加入 paged KV、continuous batching、prefix caching、preemption 等 |
 
-V0.1 的代码在 [`v0_1/`](v0_1/)，V1 的设计在 [`docs/`](docs/)。
+mini_vllm 的代码在 [`mini_vllm/`](mini_vllm/)，V1 的设计在 [`docs/`](docs/)。
