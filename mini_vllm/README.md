@@ -66,9 +66,9 @@ curl -X POST http://127.0.0.1:8000/generate \
 ## 从请求入口开始
 
 1. [HTTP 入口：do_POST()](serving/server.py#L51)
-2. [EngineCore.generate()](engine/core.py#L120) → [add_request()](engine/core.py#L51)
+2. [EngineCore.generate()](engine/core.py#L129) → [add_request()](engine/core.py#L51)
 3. [EngineCore.step()](engine/core.py#L79)
-4. [Scheduler.schedule()](engine/scheduler.py#L70) → [ModelRunner.execute()](engine/model_runner.py#L24)
+4. [Scheduler.schedule()](engine/scheduler.py#L55) → [ModelRunner.execute()](engine/model_runner.py#L23)
 5. [TinyAttentionModel._step()](model/attention.py#L72)
 
 更完整的解释在 [mini_vllm 设计文档](../docs/03-mini-vllm-design-and-implementation.md)。

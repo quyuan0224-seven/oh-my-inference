@@ -12,8 +12,7 @@ mini_vllm 没有 tensor batch、没有 attention backend 抽象、没有 CUDA gr
 from __future__ import annotations
 
 from ..model import Sampler, TinyAttentionModel
-from .scheduler import SchedulerOutput
-from .types import ModelRunnerOutput
+from .types import ModelRunnerOutput, SchedulerOutput
 
 
 class ModelRunner:
@@ -22,27 +21,36 @@ class ModelRunner:
         self.sampler = sampler
 
     def execute(self, scheduler_output: SchedulerOutput) -> ModelRunnerOutput:
-        request = scheduler_output.request
-        cache = scheduler_output.cache
+        sampled_token_ids: dict[str, list[int]] = {}
+        num_forwarded_tokens = 0
 
-        if scheduler_output.phase == "prefill":
-            logits = self.model.prefill(scheduler_output.token_ids, cache)
-        elif scheduler_output.phase == "decode":
-            if len(scheduler_output.token_ids) != 1:
-                raise ValueError("decode step must contain exactly one token")
-            logits = self.model.decode(
-                token_id=scheduler_output.token_ids[0],
-                position=scheduler_output.start_pos,
-                cache=cache,
-            )
-        else:
-            raise ValueError(f"unknown phase: {scheduler_output.phase}")
+        for scheduled in scheduler_output.scheduled:
+            request = scheduled.request
+            cache = scheduled.cache
 
-        token_id = self.sampler.sample(
-            logits,
-            temperature=request.sampling_params.temperature,
-        )
+            if scheduled.phase == "prefill":
+                logits = self.model.prefill(scheduled.token_ids, cache)
+            elif scheduled.phase == "decode":
+                if len(scheduled.token_ids) != 1:
+                    raise ValueError("decode step must contain exactly one token")
+                logits = self.model.decode(
+                    token_id=scheduled.token_ids[0],
+                    position=scheduled.start_pos,
+                    cache=cache,
+                )
+            else:
+                raise ValueError(f"unknown phase: {scheduled.phase}")
+
+            num_forwarded_tokens += scheduled.num_new_tokens
+
+            if scheduled.needs_logits:
+                token_id = self.sampler.sample(
+                    logits,
+                    temperature=request.sampling_params.temperature,
+                )
+                sampled_token_ids[request.request_id] = [token_id]
+
         return ModelRunnerOutput(
-            request_id=request.request_id,
-            token_id=token_id,
+            sampled_token_ids=sampled_token_ids,
+            num_forwarded_tokens=num_forwarded_tokens,
         )

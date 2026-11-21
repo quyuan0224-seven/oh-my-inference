@@ -134,15 +134,19 @@ mini_vllm/
 
 ```text
 SchedulerOutput   Scheduler -> ModelRunner
+  - scheduled: list[ScheduledRequest]
+
+ScheduledRequest  一个请求在这一步的分片
   - request
   - phase ("prefill" / "decode")
   - token_ids
   - start_pos
   - cache
+  - needs_logits
 
 ModelRunnerOutput ModelRunner -> Scheduler
-  - request_id
-  - token_id
+  - sampled_token_ids: dict[request_id, list[token_id]]
+  - num_forwarded_tokens
 
 Request           跨模块共享状态
   - prompt_token_ids
@@ -191,21 +195,22 @@ POST /generate
 EngineCore.step()
   │
   ├── scheduler.schedule()
-  │     ├── waiting 为空、running 为空 -> None
-  │     ├── 新请求：分配 KVCache，返回 phase="prefill"
-  │     └── 已有 running：返回 phase="decode"
+  │     ├── waiting 为空、running 为空 -> SchedulerOutput(scheduled=[])
+  │     ├── 新请求：分配 KVCache，返回一个 phase="prefill" 的 ScheduledRequest
+  │     └── 已有 running：返回一个 phase="decode" 的 ScheduledRequest
   │
   ├── model_runner.execute(SchedulerOutput)
-  │     ├── prefill: model.prefill(prompt, cache)
-  │     ├── decode:  model.decode(last_token, cache)
-  │     └── sampler.sample(logits)
+  │     └── 遍历 scheduled：
+  │           ├── prefill: model.prefill(token_ids, cache)
+  │           ├── decode:  model.decode(last_token, start_pos, cache)
+  │           └── needs_logits 时 sampler.sample(logits)
   │
   └── scheduler.update_from_output(...)
-        ├── request.num_computed_tokens += n
+        ├── request.num_computed_tokens += num_new_tokens
         ├── request.output_token_ids.append(token)
         ├── 判断 stop / length
         ├── 结束则 kv_cache_manager.free()
-        └── 返回 StepResult
+        └── 返回 list[StepResult]
 ```
 
 ### 5.4 `generate()` 的契约
@@ -220,8 +225,10 @@ generate(prompt):
     request_id = add_request(prompt)
 
     while True:
-        result = step()
-        assert result is not None   # engine 空闲，且请求已提交
+        results = step()
+        result = find(results, request_id)
+        if result is None:
+            raise RuntimeError
         if result.finished:
             return RequestOutput(...)
 ```
@@ -241,7 +248,7 @@ run_until_idle()
 
 `_finished` 只用于 `run_until_idle()` / `finished_outputs` 这类批量接口，不是 `generate()` 的完成信号。
 
-因为 `generate()` 已经保证 engine 空闲，`step()` 返回的一定是当前请求，所以不需要再检查 `request_id`。这类“不可能发生”的分支只会让代码显得像支持并发交错。
+`step()` 现在返回 `list[StepResult]`，为后续多请求 batch 留出位置。`generate()` 仍然要求 engine 空闲，所以每步列表里只有当前请求；代码按 `request_id` 找到它，并为“找不到”的情况保留防御性检查。
 
 ### 5.5 prefill / decode 的 KV 位置
 
@@ -312,18 +319,23 @@ values: list[list[float]]
 
 V1 会把这里的连续 `list` 替换成 `BlockPool + block table`，但 `KVCacheManager` 的职责边界不变。
 
-### 6.3 ModelRunner：只执行一个 SchedulerOutput
+### 6.3 ModelRunner：执行一个 SchedulerOutput
 
 ```text
-if phase == "prefill":
-    logits = model.prefill(token_ids, cache)
-elif phase == "decode":
-    logits = model.decode(token_ids[0], start_pos, cache)
-token = sampler.sample(logits, temperature)
-return ModelRunnerOutput(token_id)
+for scheduled in scheduler_output.scheduled:
+    if phase == "prefill":
+        logits = model.prefill(token_ids, cache)
+    elif phase == "decode":
+        logits = model.decode(token_ids[0], start_pos, cache)
+
+    if scheduled.needs_logits:
+        token = sampler.sample(logits, temperature)
+        sampled_token_ids[request_id] = [token]
+
+return ModelRunnerOutput(sampled_token_ids, num_forwarded_tokens)
 ```
 
-它不关心 waiting 队列、不关心 batching、不关心 HTTP。这样 Scheduler 和 ModelRunner 可以独立测试。
+它按 `scheduled` 循环执行，为 logical batch 留出接口；当前 `Scheduler` 每步只产生一个 item。它不关心 waiting 队列、不关心 HTTP，这样 Scheduler 和 ModelRunner 可以独立测试。
 
 ### 6.4 Toy Model：真实 attention，简化结构
 
@@ -419,7 +431,7 @@ mini_vllm 的核心价值不是“功能完整”，而是**模块边界正确�
 
 ### 8.1 测试内容
 
-`tests/test_engine.py` 包含三个测试：
+`tests/test_engine.py` 包含七个测试，按验证目标分为六组：
 
 1. **KV cache 路径正确**
    - `prefill(prompt)` 与 `forward_full(prompt)` 的 logits 对比；
@@ -430,17 +442,27 @@ mini_vllm 的核心价值不是“功能完整”，而是**模块边界正确�
    - 输出长度等于 `max_tokens`（没有 stop 时）；
    - 请求结束后 `active_requests == 0`。
 
-3. **Scheduler 串行处理队列**
+3. **generate 要求 engine 空闲**
+   - 已有请求排队时调用 `generate()` 会抛 `RuntimeError`。
+
+4. **Scheduler 串行处理队列**
    - 两个请求按 FCFS 依次完成；
    - 第一步是 prefill，后续出现 decode；
    - 完成后 KV cache 被释放。
+
+5. **空闲 step 返回空列表**
+   - 没有请求时 `EngineCore.step() == []`。
+
+6. **批量契约**
+   - 空 `SchedulerOutput.is_empty == True`；
+   - `total_num_scheduled_tokens` 等于所有 `ScheduledRequest.num_new_tokens` 之和。
 
 ### 8.2 运行记录
 
 ```text
 $ python3 -m unittest mini_vllm.tests.test_engine -v
 ...
-Ran 3 tests in 0.005s
+Ran 7 tests in 0.005s
 
 OK
 ```
@@ -461,10 +483,11 @@ POST /generate
 - `0 <= num_computed_tokens <= num_tokens`；
 - 每个 running 请求有且只有一个 KVCache；
 - 请求结束时 KVCache 必须释放；
-- `SchedulerOutput.start_pos == cache.num_tokens`；
-- `SchedulerOutput.token_ids` 的长度等于这一步要计算的 token 数；
+- `ScheduledRequest.start_pos == cache.num_tokens`；
+- `ScheduledRequest.token_ids` 的长度等于这一步要计算的 token 数；
 - prefill 只在 cache 为空时发生；
-- decode 只处理一个 token。
+- decode 只处理一个 token；
+- 空闲时 `SchedulerOutput.scheduled` 为空，`EngineCore.step()` 返回空列表。
 
 ---
 
@@ -505,12 +528,12 @@ Demo 输出中的文本是随机权重产生的乱码，这是预期行为。观
 从**请求入口**开始读，顺着一次请求的调用链往下走：
 
 1. [HTTP 入口：do_POST()](../mini_vllm/serving/server.py#L51)：解析 JSON，调用 `engine.generate()`；
-2. [EngineCore.generate()](../mini_vllm/engine/core.py#L120)：单请求的同步入口，先 `add_request` 再循环 `step`；
+2. [EngineCore.generate()](../mini_vllm/engine/core.py#L129)：单请求的同步入口，先 `add_request` 再循环 `step`；
 3. [EngineCore.add_request()](../mini_vllm/engine/core.py#L51)：tokenize、构造 `Request`、进入 Scheduler；
-4. [Scheduler.add_request()](../mini_vllm/engine/scheduler.py#L54)：请求进入 waiting 队列；
+4. [Scheduler.add_request()](../mini_vllm/engine/scheduler.py#L39)：请求进入 waiting 队列；
 5. [EngineCore.step()](../mini_vllm/engine/core.py#L79)：`schedule -> execute -> update`；
-6. [Scheduler.schedule()](../mini_vllm/engine/scheduler.py#L70)：第一次返回 prefill，之后返回 decode；
-7. [ModelRunner.execute()](../mini_vllm/engine/model_runner.py#L24)：调用模型和 Sampler；
+6. [Scheduler.schedule()](../mini_vllm/engine/scheduler.py#L55)：第一次返回 prefill，之后返回 decode；
+7. [ModelRunner.execute()](../mini_vllm/engine/model_runner.py#L23)：调用模型和 Sampler；
 8. [TinyAttentionModel._step()](../mini_vllm/model/attention.py#L72)：写 K/V、读 cache、算 attention。
 
 如果只想看核心循环，再重点看这四段：

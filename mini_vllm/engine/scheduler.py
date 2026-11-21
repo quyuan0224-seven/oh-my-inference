@@ -17,31 +17,16 @@ mini_vllm 的调度策略：
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
 
-from ..model.cache import KVCache
 from .kv_cache import KVCacheManager
 from .types import (
     ModelRunnerOutput,
     Request,
     RequestStatus,
+    ScheduledRequest,
+    SchedulerOutput,
     SchedulerStep,
 )
-
-
-@dataclass(frozen=True)
-class SchedulerOutput:
-    """Scheduler 交给 ModelRunner 的一步工作。"""
-
-    request: Request
-    phase: str  # "prefill" or "decode"
-    token_ids: list[int]
-    start_pos: int
-    cache: KVCache
-
-    @property
-    def num_new_tokens(self) -> int:
-        return len(self.token_ids)
 
 
 class Scheduler:
@@ -67,11 +52,11 @@ class Scheduler:
     def num_running(self) -> int:
         return 1 if self.running is not None else 0
 
-    def schedule(self) -> SchedulerOutput | None:
-        """返回下一步工作；没有请求时返回 None。"""
+    def schedule(self) -> SchedulerOutput:
+        """返回下一步工作；没有请求时返回空的 SchedulerOutput。"""
         if self.running is None:
             if not self.waiting:
-                return None
+                return SchedulerOutput(scheduled=[])
 
             request = self.waiting.popleft()
             request.status = RequestStatus.RUNNING
@@ -80,11 +65,16 @@ class Scheduler:
 
             # 第一个 step：prefill 整个 prompt。
             return SchedulerOutput(
-                request=request,
-                phase="prefill",
-                token_ids=list(request.prompt_token_ids),
-                start_pos=0,
-                cache=cache,
+                scheduled=[
+                    ScheduledRequest(
+                        request=request,
+                        phase="prefill",
+                        token_ids=list(request.prompt_token_ids),
+                        start_pos=0,
+                        cache=cache,
+                        needs_logits=True,
+                    )
+                ]
             )
 
         request = self.running
@@ -94,49 +84,85 @@ class Scheduler:
         # 后续 step：只计算最近采样出的那个 token。
         # 它的 KV 还没有写入 cache，写完后再采样下一个 token。
         return SchedulerOutput(
-            request=request,
-            phase="decode",
-            token_ids=[request.output_token_ids[-1]],
-            start_pos=request.num_computed_tokens,
-            cache=self.kv_cache_manager.get(request.request_id),
+            scheduled=[
+                ScheduledRequest(
+                    request=request,
+                    phase="decode",
+                    token_ids=[request.output_token_ids[-1]],
+                    start_pos=request.num_computed_tokens,
+                    cache=self.kv_cache_manager.get(request.request_id),
+                    needs_logits=True,
+                )
+            ]
         )
 
     def update_from_output(
         self,
         scheduler_output: SchedulerOutput,
         model_output: ModelRunnerOutput,
-    ) -> SchedulerStep:
-        """把采样结果写回 Request，并判断是否结束。"""
-        request = scheduler_output.request
-        request.num_computed_tokens += scheduler_output.num_new_tokens
-        request.output_token_ids.append(model_output.token_id)
+    ) -> list[SchedulerStep]:
+        """把采样结果写回各个 Request，并判断是否结束。"""
+        steps: list[SchedulerStep] = []
 
-        finished = False
-        finish_reason: str | None = None
+        for scheduled in scheduler_output.scheduled:
+            request = scheduled.request
+            request.num_computed_tokens += scheduled.num_new_tokens
 
-        if model_output.token_id in request.stop_token_ids:
-            finished = True
-            finish_reason = "stop"
-        elif len(request.output_token_ids) >= request.sampling_params.max_tokens:
-            finished = True
-            finish_reason = "length"
-        elif request.num_tokens >= self.max_model_len:
-            finished = True
-            finish_reason = "length"
-
-        if finished:
-            request.finish_reason = finish_reason
-            if finish_reason == "stop":
-                request.status = RequestStatus.FINISHED_STOPPED
+            sampled_token_ids = model_output.sampled_token_ids.get(
+                request.request_id,
+                [],
+            )
+            token_id: int | None
+            if scheduled.needs_logits:
+                if len(sampled_token_ids) != 1:
+                    raise RuntimeError(
+                        f"expected one sampled token for {request.request_id}, "
+                        f"got {len(sampled_token_ids)}"
+                    )
+                token_id = sampled_token_ids[0]
+                request.output_token_ids.append(token_id)
             else:
-                request.status = RequestStatus.FINISHED_LENGTH_CAPPED
-            self.kv_cache_manager.free(request.request_id)
-            self.running = None
+                if sampled_token_ids:
+                    raise RuntimeError(
+                        f"unexpected sampled token for {request.request_id}"
+                    )
+                token_id = None
 
-        return SchedulerStep(
-            request=request,
-            phase=scheduler_output.phase,
-            token_id=model_output.token_id,
-            finished=finished,
-            finish_reason=finish_reason,
-        )
+            finished = False
+            finish_reason: str | None = None
+
+            if token_id is not None:
+                if token_id in request.stop_token_ids:
+                    finished = True
+                    finish_reason = "stop"
+                elif (
+                    len(request.output_token_ids)
+                    >= request.sampling_params.max_tokens
+                ):
+                    finished = True
+                    finish_reason = "length"
+
+            if not finished and request.num_tokens >= self.max_model_len:
+                finished = True
+                finish_reason = "length"
+
+            if finished:
+                request.finish_reason = finish_reason
+                if finish_reason == "stop":
+                    request.status = RequestStatus.FINISHED_STOPPED
+                else:
+                    request.status = RequestStatus.FINISHED_LENGTH_CAPPED
+                self.kv_cache_manager.free(request.request_id)
+                self.running = None
+
+            steps.append(
+                SchedulerStep(
+                    request=request,
+                    phase=scheduled.phase,
+                    token_id=token_id,
+                    finished=finished,
+                    finish_reason=finish_reason,
+                )
+            )
+
+        return steps

@@ -8,7 +8,7 @@
 - 基线：`main` 当前 HEAD（见 `git log -1`）
 - 版本：mini_vllm 当前基线；V1 开发中
 - 当前里程碑：M1 MVP-A（范围与验收见 [02 §10](02-mini-inference-design-proposal.md)）
-- 测试：`python3 -m unittest discover -v` -> 4 passed
+- 测试：`python3 -m unittest discover -v` -> 7 passed
 - 最后更新：2026-11-21
 
 ## M1 小步计划
@@ -18,7 +18,7 @@
 | ID | 小步 | 依赖 | 状态 |
 |---|---|---|---|
 | S0 | 重命名 `v0_1` -> `mini_vllm` | — | ✅ 已完成 |
-| S1 | 批量契约重构 | S0 | 进行中 |
+| S1 | 批量契约重构 | S0 | ✅ 已完成 |
 | S2 | 多请求 logical batch | S1 | 待开始 |
 | S3 | chunked prefill | S2 | 待开始 |
 | S4 | token budget | S3 | 待开始 |
@@ -34,7 +34,7 @@
 
 | 任务 | 主机 / agent | 分支 | 状态 |
 |---|---|---|---|
-| S0–S1 | seven-z790-eagle / opencode | `main` | 进行中 |
+| — | — | — | — |
 
 规则：开工前加一行并 push；完成后改为“已完成”；冲突时以先 push 且已开工的主机为准。
 
@@ -52,6 +52,7 @@
 
 | 日期 | 主机 / agent | 变更 | 验证 |
 |---|---|---|---|
+| 2026-11-21 | seven-z790-eagle / opencode | S1：批量契约重构（`ScheduledRequest`、`SchedulerOutput`、`ModelRunnerOutput`、`step()` 返回列表） | 行为不变；`unittest discover` 7 passed；example 输出一致 |
 | 2026-11-21 | seven-z790-eagle / opencode | S0：`v0_1/` -> `mini_vllm/`，更新导入、命令、文档路径和命名 | `unittest discover` 4 passed；example 可运行 |
 | 2026-11-21 | seven-z790-eagle / opencode | 建立状态板；删除与 `docs/02` 重复的 roadmap 内容 | 文档链接检查通过；4 tests passed |
 | 2026-11-14 | — | mini_vllm 初版基线 | commit `7bb88e7`；4 tests passed |

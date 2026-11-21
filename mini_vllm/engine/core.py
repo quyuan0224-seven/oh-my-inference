@@ -76,43 +76,52 @@ class EngineCore:
         self.scheduler.add_request(request)
         return request_id
 
-    def step(self) -> StepResult | None:
-        """执行一个调度步；没有请求时返回 None。"""
+    def step(self) -> list[StepResult]:
+        """执行一个调度步；没有请求时返回空列表。"""
         scheduler_output = self.scheduler.schedule()
-        if scheduler_output is None:
-            return None
+        if scheduler_output.is_empty:
+            return []
 
         model_output = self.model_runner.execute(scheduler_output)
-        scheduler_step = self.scheduler.update_from_output(
+        scheduler_steps = self.scheduler.update_from_output(
             scheduler_output,
             model_output,
         )
 
-        request = scheduler_step.request
-        output_token_ids = list(request.output_token_ids)
-        output_text = self.tokenizer.decode(output_token_ids)
-        result = StepResult(
-            request_id=request.request_id,
-            phase=scheduler_step.phase,
-            token_id=scheduler_step.token_id,
-            token_char=self.tokenizer.decode([scheduler_step.token_id]),
-            output_text=output_text,
-            output_token_ids=output_token_ids,
-            num_computed_tokens=request.num_computed_tokens,
-            finished=scheduler_step.finished,
-            finish_reason=scheduler_step.finish_reason,
-        )
-
-        if scheduler_step.finished:
-            self._finished[request.request_id] = self._make_request_output(
+        results: list[StepResult] = []
+        for scheduler_step in scheduler_steps:
+            request = scheduler_step.request
+            output_token_ids = list(request.output_token_ids)
+            output_text = self.tokenizer.decode(output_token_ids)
+            token_char = (
+                self.tokenizer.decode([scheduler_step.token_id])
+                if scheduler_step.token_id is not None
+                else None
+            )
+            result = StepResult(
                 request_id=request.request_id,
-                prompt=request.prompt,
+                phase=scheduler_step.phase,
+                token_id=scheduler_step.token_id,
+                token_char=token_char,
                 output_text=output_text,
                 output_token_ids=output_token_ids,
+                num_computed_tokens=request.num_computed_tokens,
+                finished=scheduler_step.finished,
                 finish_reason=scheduler_step.finish_reason,
             )
 
-        return result
+            if scheduler_step.finished:
+                self._finished[request.request_id] = self._make_request_output(
+                    request_id=request.request_id,
+                    prompt=request.prompt,
+                    output_text=output_text,
+                    output_token_ids=output_token_ids,
+                    finish_reason=scheduler_step.finish_reason,
+                )
+
+            results.append(result)
+
+        return results
 
     def has_requests(self) -> bool:
         return self.scheduler.has_requests()
@@ -132,10 +141,14 @@ class EngineCore:
         request_id = self.add_request(prompt, sampling_params)
 
         while True:
-            result = self.step()
-            # generate() 拥有唯一的请求，所以 step 不可能返回 None，
-            # 也不可能是别的 request。
-            assert result is not None
+            results = self.step()
+            # generate() 拥有唯一的请求，所以每步结果中一定有它。
+            result = next(
+                (item for item in results if item.request_id == request_id),
+                None,
+            )
+            if result is None:
+                raise RuntimeError("engine did not schedule the generate request")
 
             if result.finished:
                 return self._make_request_output(

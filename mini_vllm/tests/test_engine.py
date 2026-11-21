@@ -10,7 +10,15 @@ from __future__ import annotations
 
 import unittest
 
-from ..engine import CharTokenizer, EngineCore, SamplingParams, VOCAB_SIZE
+from ..engine import (
+    CharTokenizer,
+    EngineCore,
+    Request,
+    SamplingParams,
+    ScheduledRequest,
+    SchedulerOutput,
+    VOCAB_SIZE,
+)
 from ..model import KVCache, TinyAttentionModel
 
 
@@ -42,6 +50,37 @@ class TestKVCache(unittest.TestCase):
 
         for a, b in zip(decode_logits, full_next_logits):
             self.assertAlmostEqual(a, b, places=10)
+
+
+class TestContracts(unittest.TestCase):
+    def test_empty_scheduler_output(self) -> None:
+        output = SchedulerOutput(scheduled=[])
+
+        self.assertTrue(output.is_empty)
+        self.assertEqual(output.total_num_scheduled_tokens, 0)
+
+    def test_scheduler_output_counts_scheduled_tokens(self) -> None:
+        request = Request(
+            request_id="req-x",
+            prompt="hi",
+            prompt_token_ids=[1, 2],
+            sampling_params=SamplingParams(max_tokens=1, stop_chars=""),
+        )
+        cache = KVCache(hidden_size=16)
+        scheduled = ScheduledRequest(
+            request=request,
+            phase="prefill",
+            token_ids=[1, 2],
+            start_pos=0,
+            cache=cache,
+            needs_logits=True,
+        )
+
+        output = SchedulerOutput(scheduled=[scheduled])
+
+        self.assertFalse(output.is_empty)
+        self.assertEqual(output.total_num_scheduled_tokens, 2)
+        self.assertEqual(scheduled.num_new_tokens, 2)
 
 
 class TestEngineCore(unittest.TestCase):
@@ -80,9 +119,9 @@ class TestEngineCore(unittest.TestCase):
 
         steps = []
         while engine.has_requests():
-            result = engine.step()
-            self.assertIsNotNone(result)
-            steps.append(result)
+            results = engine.step()
+            self.assertTrue(results)
+            steps.extend(results)
 
         self.assertEqual(len(engine.finished_outputs), 2)
         self.assertTrue(all(o.finish_reason == "length" for o in engine.finished_outputs))
@@ -90,6 +129,12 @@ class TestEngineCore(unittest.TestCase):
         self.assertEqual(steps[0].phase, "prefill")
         self.assertTrue(any(s.phase == "decode" for s in steps))
         self.assertEqual(engine.kv_cache_manager.active_requests, 0)
+
+    def test_idle_step_returns_empty_list(self) -> None:
+        tokenizer = CharTokenizer()
+        engine = EngineCore(tokenizer=tokenizer, model=make_model(), seed=0)
+
+        self.assertEqual(engine.step(), [])
 
 
 if __name__ == "__main__":

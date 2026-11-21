@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from ..model.cache import KVCache
+
 
 class RequestStatus(Enum):
     WAITING = "waiting"
@@ -77,11 +79,42 @@ class Request:
 
 
 @dataclass(frozen=True)
-class ModelRunnerOutput:
-    """ModelRunner 执行一步后的结果：采样出的下一个 token。"""
+class ScheduledRequest:
+    """Scheduler 交给 ModelRunner 的一个请求分片。"""
 
-    request_id: str
-    token_id: int
+    request: Request
+    phase: str  # "prefill" or "decode"
+    token_ids: list[int]
+    start_pos: int
+    cache: KVCache
+    needs_logits: bool
+
+    @property
+    def num_new_tokens(self) -> int:
+        return len(self.token_ids)
+
+
+@dataclass(frozen=True)
+class SchedulerOutput:
+    """Scheduler 交给 ModelRunner 的一步工作。"""
+
+    scheduled: list[ScheduledRequest]
+
+    @property
+    def total_num_scheduled_tokens(self) -> int:
+        return sum(item.num_new_tokens for item in self.scheduled)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.scheduled
+
+
+@dataclass(frozen=True)
+class ModelRunnerOutput:
+    """ModelRunner 执行一步后的批量结果。"""
+
+    sampled_token_ids: dict[str, list[int]]
+    num_forwarded_tokens: int
 
 
 @dataclass(frozen=True)
@@ -90,7 +123,7 @@ class SchedulerStep:
 
     request: Request
     phase: str
-    token_id: int
+    token_id: int | None
     finished: bool
     finish_reason: str | None
 
@@ -101,8 +134,8 @@ class StepResult:
 
     request_id: str
     phase: str
-    token_id: int
-    token_char: str
+    token_id: int | None
+    token_char: str | None
     output_text: str
     output_token_ids: list[int]
     num_computed_tokens: int

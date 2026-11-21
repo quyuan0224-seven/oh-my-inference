@@ -55,17 +55,18 @@ def main() -> None:
 
     step = 0
     while engine.has_requests():
-        result = engine.step()
-        if result is None:
+        results = engine.step()
+        if not results:
             break
-        step += 1
-        token = result.token_char.replace("\n", "\\n")
-        print(
-            f"{step:>4} | {result.request_id:<7} | {result.phase:<7} | "
-            f"{token:^7} | {result.num_computed_tokens:>8} | "
-            f"{engine.kv_cache_manager.cached_tokens:>6} | "
-            f"{result.output_text!r}"
-        )
+        for result in results:
+            step += 1
+            token = (result.token_char or "").replace("\n", "\\n")
+            print(
+                f"{step:>4} | {result.request_id:<7} | {result.phase:<7} | "
+                f"{token:^7} | {result.num_computed_tokens:>8} | "
+                f"{engine.kv_cache_manager.cached_tokens:>6} | "
+                f"{result.output_text!r}"
+            )
 
     print()
     print("final outputs:")
