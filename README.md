@@ -1,6 +1,6 @@
 # 从 vLLM 到最小 Inference Engine
 
-> 调研基准：2026-11，vLLM 0.33.x / V1 主线。  
+> 调研基准：2026-11，vLLM 0.33.x / V1 主线。
 > 当前进度：**V0.1 已实现**；V1（paged KV、continuous batching、prefix caching 等）仍是设计稿。
 
 ## 先看什么
@@ -62,6 +62,15 @@ V0.1 刻意不做的：continuous batching、paged KV cache、prefix caching、p
    - paged KV cache / block table
    - continuous batching 与 token-budget scheduler
    - 正确性验证、里程碑、技术取舍
+
+### 3. 多主机协作与记账
+
+后续可能在不同主机上开发。开始前读：
+
+- [AGENTS.md](AGENTS.md)：硬性开发约定；
+- [项目状态与任务认领](docs/00-status.md)：当前进度、任务认领、决策和变更日志。
+
+设计方向和里程碑以 [V1 设计方案](docs/02-mini-inference-design-proposal.md) 为准；状态页只记录执行状态，不重复设计内容。
 
 ## 版本关系
 
